@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Multi-Core Load Balancing Scheduler</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════
+       HEADER — controls always reachable, tick always visible
+       ═══════════════════════════════════════════════════ -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">
+        <div class="core-dot" style="--c:#4f9cf9"></div>
+        <div class="core-dot" style="--c:#4fdd9a"></div>
+        <div class="core-dot" style="--c:#f9a84f"></div>
+        <div class="core-dot" style="--c:#c77dff"></div>
+      </div>
+      <div>
+        <div class="brand-title">Multi-Core Load Balancing Scheduler</div>
+        <div class="brand-sub">CSE316 · Operating Systems</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-play" id="btnPlay">▶ Start</button>
+      <button class="btn-ctrl" id="btnStep">Step</button>
+      <button class="btn-ctrl" id="btnReset">Reset</button>
+      <div class="speed-ctrl">
+        <span class="speed-label">Speed</span>
+        <input type="range" id="speedRange" min="80" max="1200" step="40" value="500"/>
+        <span class="speed-val" id="speedVal">500ms</span>
+      </div>
+    </div>
+
+    <div class="header-stats">
+      <div class="hstat">
+        <div class="hstat-val" id="hTick">0</div>
+        <div class="hstat-lbl">Tick</div>
+      </div>
+      <div class="hstat-divider"></div>
+      <div class="hstat">
+        <div class="hstat-val" id="hDone">0 / 10</div>
+        <div class="hstat-lbl">Done</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════
+       ALGORITHM BAR — one strip showing what's active
+       ═══════════════════════════════════════════════════ -->
+  <div class="algo-bar">
+    <div class="algo-bar-label">Algorithms</div>
+
+    <div class="algo-pill active always" title="Priority Round-Robin: always active">
+      <span class="pill-dot"></span>
+      Priority Round-Robin
+      <span class="pill-sub">always on</span>
+    </div>
+
+    <label class="algo-pill" id="pill-steal" title="Idle cores steal work from the busiest core">
+      <input type="checkbox" id="tog-steal" checked hidden/>
+      <span class="pill-dot" style="--pc:#4fdd9a"></span>
+      Work Stealing
+      <span class="pill-count" id="steal-count">0</span>
+    </label>
+
+    <label class="algo-pill" id="pill-migrate" title="Every 5 ticks: rebalance cores that differ by more than 2">
+      <input type="checkbox" id="tog-migrate" checked hidden/>
+      <span class="pill-dot" style="--pc:#f9a84f"></span>
+      Dynamic Migration
+      <span class="pill-count" id="migrate-count">0</span>
+    </label>
+
+    <label class="algo-pill" id="pill-age" title="Every 10 ticks: boost waiting process priorities to prevent starvation">
+      <input type="checkbox" id="tog-age" checked hidden/>
+      <span class="pill-dot" style="--pc:#c77dff"></span>
+      Priority Aging
+      <span class="pill-count" id="age-count">0</span>
+    </label>
+
+    <div class="algo-bar-hint">Click to toggle · watch the effect live</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       CORE SECTION — the hero: what is happening right now
+       ═══════════════════════════════════════════════════ -->
+  <section class="cores-section">
+    <div class="section-label">
+      CPU Cores
+      <span class="balance-badge" id="balanceBadge"></span>
+    </div>
+    <div class="cores-grid" id="coresGrid">
+      <!-- populated by renderer.js -->
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════
+       INJECT PROCESS — compact, inline
+       ═══════════════════════════════════════════════════ -->
+  <div class="inject-bar">
+    <span class="inject-label">Inject process →</span>
+    <input type="text"   id="pName"     value="Omega"  maxlength="8" placeholder="Name"/>
+    <input type="number" id="pBurst"    value="10" min="1" max="40"  placeholder="Burst"/>
+    <input type="number" id="pPriority" value="3"  min="1" max="10"  placeholder="Priority (1=high)"/>
+    <button class="btn-inject" id="btnAdd">+ Add</button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       DETAIL TABS — one view at a time
+       ═══════════════════════════════════════════════════ -->
+  <div class="detail-section">
+    <div class="tab-bar">
+      <button class="tab active" data-tab="gantt">Gantt Chart</button>
+      <button class="tab" data-tab="table">Process Table</button>
+      <button class="tab" data-tab="log">Event Log</button>
+    </div>
+
+    <div class="tab-content" id="tab-gantt">
+      <div class="gantt-scroll" id="ganttWrap">
+        <!-- populated by renderer.js -->
+      </div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-table">
+      <div class="table-scroll">
+        <table id="procTable">
+          <thead>
+            <tr>
+              <th>PID</th><th>Name</th><th>State</th><th>Core</th>
+              <th>Priority</th><th>Burst</th><th>Remaining</th>
+              <th>Wait Time</th><th>Turnaround</th><th>Migrations</th>
+            </tr>
+          </thead>
+          <tbody id="procTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-log">
+      <div class="log-scroll" id="logWrap">
+        <!-- populated by renderer.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       STATS FOOTER — summary, appears last because it summarizes
+       ═══════════════════════════════════════════════════ -->
+  <footer class="stats-footer">
+    <div class="stat-item">
+      <div class="stat-val" id="fAvgTAT">–</div>
+      <div class="stat-lbl">Avg Turnaround</div>
+    </div>
+    <div class="stat-sep"></div>
+    <div class="stat-item">
+      <div class="stat-val" id="fAvgWT">–</div>
+      <div class="stat-lbl">Avg Wait Time</div>
+    </div>
+    <div class="stat-sep"></div>
+    <div class="stat-item">
+      <div class="stat-val" id="fSteals">0</div>
+      <div class="stat-lbl">Work Steals</div>
+    </div>
+    <div class="stat-sep"></div>
+    <div class="stat-item">
+      <div class="stat-val" id="fMigr">0</div>
+      <div class="stat-lbl">Migrations</div>
+    </div>
+    <div class="stat-sep"></div>
+    <div id="utilBars" class="util-bars">
+      <!-- core util bars populated by renderer -->
+    </div>
+  </footer>
+
+  <script src="js/engine.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

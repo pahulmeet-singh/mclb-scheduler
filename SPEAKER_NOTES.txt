@@ -1,0 +1,398 @@
+SPEAKER NOTES — Multi-Core Load Balancing Scheduler
+CSE316 · Operating Systems · CA2 Presentation
+======================================================
+
+Replace "Student A / B / C" with your actual names before presenting.
+Decide who presents which slides based on who built what.
+Suggested split: Student A = Slides 1-4, Student B = Slides 5-8, Student C = Slides 9-12.
+
+======================================================
+SLIDE 1 — TITLE SLIDE
+Presenter: Student A
+======================================================
+
+[Student A begins, standing confidently]
+
+"Good morning / afternoon, everyone.
+
+My name is [Name], and with me are [Name] and [Name].
+
+Today we are presenting our CA2 project for CSE316 Operating Systems.
+
+Our project is called the Multi-Core Load Balancing Scheduler.
+
+In simple terms — we built a system that decides which process runs on which CPU core, 
+at which time, in a way that keeps all cores busy, keeps all processes moving, 
+and makes sure no process is left waiting forever.
+
+We implemented this in two parts: a C program you can compile and run, 
+and an interactive web dashboard that visualizes everything live.
+
+As you can see on the right, our system is built around four algorithms 
+working together. We'll explain each one in detail."
+
+[Pause, let the slide breathe for 2-3 seconds before advancing]
+
+======================================================
+SLIDE 2 — THE PROBLEM
+Presenter: Student A
+======================================================
+
+"Before we talk about our solution, let's understand the problem.
+
+Modern computers have multiple CPU cores — four, eight, sixteen or more. 
+But just having multiple cores is not enough. 
+
+Without smart scheduling, some cores end up with five or six processes 
+piled up waiting, while other cores are completely idle. 
+
+You can see this on the right side of the slide — Core 0 is overloaded, 
+Core 1 and Core 3 are doing almost nothing. That is wasted hardware.
+
+This creates three specific problems:
+
+First — Starvation. Low-priority processes never get CPU time because 
+higher-priority ones keep cutting in front.
+
+Second — Idle cores. You're paying for hardware that isn't working.
+
+Third — Low throughput. Fewer jobs complete per second than the hardware is capable of.
+
+Our scheduler solves all three of these problems."
+
+======================================================
+SLIDE 3 — OUR SOLUTION (4-ALGO OVERVIEW)
+Presenter: Student A
+======================================================
+
+"Our solution uses four algorithms working together as one scheduler.
+
+Algorithm 01 is Priority Round-Robin — our base scheduling policy. 
+Every core always picks the highest-priority process first, 
+and gives each process a fixed time slice of 4 ticks before moving on.
+
+Algorithm 02 is Work Stealing — if a core goes idle, 
+it doesn't wait. It actively takes a process from the busiest core.
+
+Algorithm 03 is Dynamic Migration — every 5 ticks, 
+we check if any two cores are seriously imbalanced and move processes to fix it.
+
+Algorithm 04 is Priority Aging — every 10 ticks, 
+we boost the priority of every waiting process, 
+so that low-priority processes cannot starve forever.
+
+Together, these four algorithms keep all cores busy, 
+keep all processes moving, and keep the system fair."
+
+[Hand off to Student B]
+
+======================================================
+SLIDE 4 — PRIORITY ROUND-ROBIN
+Presenter: Student B
+======================================================
+
+"Thank you.
+
+So let me explain how the base scheduling works — Priority Round-Robin.
+
+Each core maintains its own ready queue — a list of processes waiting to run.
+
+When a core is free, it doesn't just pick the next process in line. 
+It scans the queue and picks the one with the lowest priority NUMBER. 
+Remember — priority 1 is the most urgent. Priority 10 is the least urgent.
+
+Once a process is running, it gets a time quantum — 4 ticks. 
+That means it can run for at most 4 ticks before it is preempted.
+
+You can see this in the timeline on the right. P0 has priority 1, 
+so it runs first, ticks 1 through 4. When the quantum expires, 
+P2 with priority 2 runs next, then P1 with priority 3.
+
+Preemption is key — it means no single process can monopolize the CPU. 
+Everyone gets a turn.
+
+The one problem with pure priority scheduling is starvation — 
+low priority processes might wait forever. 
+That's why we have Algorithm 04, Priority Aging, which we'll explain shortly."
+
+======================================================
+SLIDE 5 — WORK STEALING
+Presenter: Student B
+======================================================
+
+"Now let me explain Work Stealing.
+
+The scenario is this: Core 1 finishes all its processes and goes idle. 
+But Core 0 still has Alpha, Beta, Gamma, and Delta queued up. 
+Without Work Stealing, Core 1 would just sit there doing nothing.
+
+With Work Stealing, as soon as Core 1 goes idle, it scans all other cores 
+and finds Core 0 is the busiest. It then steals one process — Delta — 
+and brings it into its own queue. Core 1 is now useful again.
+
+The steps are:
+One — Core becomes idle, nothing running, queue empty.
+Two — Scan all other cores, find the busiest one.
+Three — Steal its lowest-priority waiting process.
+Four — Run it immediately.
+
+An important rule: we only steal if the source core has 2 or more processes queued. 
+If it only has one, we leave it alone — stealing that one would just move the problem, not solve it.
+
+You can see the before-and-after on the right. 
+Core 0 goes from 4 processes to 3, Core 1 goes from idle to running Delta."
+
+======================================================
+SLIDE 6 — DYNAMIC MIGRATION
+Presenter: Student B
+======================================================
+
+"Work Stealing handles idle cores. But what about a subtler problem — 
+what if all cores are busy, but the load is very uneven?
+
+For example: Core 0 has 6 processes queued. Core 3 has 0 processes queued, 
+but it is currently running something. Work Stealing won't trigger 
+because Core 3 isn't idle.
+
+That's where Dynamic Migration comes in.
+
+Every 5 ticks, we scan every pair of cores. 
+If any two cores differ in queue size by more than our threshold — which is 2 — 
+we migrate the lowest-priority waiting process from the heavier core to the lighter one.
+
+Look at the before chart: Core 0 has 6, Core 3 has 0 — 
+a difference of 6, well above our threshold of 2.
+
+After migration, Core 0 drops to 3, Core 3 rises to 2. 
+The system is now much more balanced.
+
+Three design choices here:
+Why every 5 ticks? Too frequent means too much overhead. Too rare means imbalances persist.
+Why threshold of 2? A difference of 1 or 2 is acceptable. We only migrate when it's clearly worth it.
+Why the lowest-priority process? Because it's the least urgent — it can afford the delay of moving."
+
+======================================================
+SLIDE 7 — PRIORITY AGING
+Presenter: Student B
+======================================================
+
+"The last algorithm — Priority Aging — addresses starvation.
+
+Starvation is when a low-priority process waits so long in the queue 
+that it never gets CPU time. If high-priority processes keep arriving, 
+they keep jumping ahead. The low-priority process just sits there.
+
+This is a real problem in OS design, and it's well known in the literature.
+
+Our solution: Priority Aging.
+
+Every 10 ticks, we look at every process that is still in the READY state — 
+meaning it's waiting, not running. 
+We decrease its priority number by 1, making it more urgent.
+
+Look at the graph. A process that starts at priority 8 
+becomes priority 7 after 10 ticks, then 6, then 5, and so on. 
+
+Eventually, it reaches priority 1 — the highest urgency — 
+and it is guaranteed to run next.
+
+With Priority Aging, starvation is structurally impossible. 
+No matter how many high-priority processes arrive, 
+every waiting process will eventually get its turn."
+
+[Hand off to Student C]
+
+======================================================
+SLIDE 8 — THE PROCESS CONTROL BLOCK
+Presenter: Student C
+======================================================
+
+"Thank you.
+
+Every scheduling decision in our system revolves around one data structure: 
+the Process Control Block, or PCB.
+
+The PCB is how the OS keeps track of every process. 
+Think of it as the OS's file on a process — everything it needs to know is in there.
+
+On the left you can see our C implementation. Let me walk through the key fields.
+
+`id` and `name` — identify the process.
+
+`burst` is the total CPU time the process needs. 
+`rem` is how much is left. As the process runs, rem decrements.
+
+`priority` is the number from 1 to 10 — 1 is most urgent. 
+This is what our Priority Round-Robin and Aging algorithms look at.
+
+`arrive` is the tick when the process entered the system.
+
+`state` tracks whether the process is NEW, READY, RUNNING, or DONE.
+
+`core` tells us which core the process is assigned to. 
+This changes when Work Stealing or Migration moves it.
+
+`migrations` counts how many times the process has been moved between cores — 
+a useful metric for tuning the algorithms.
+
+And the final three fields — `start_tick`, `end_tick` — 
+let us compute Turnaround Time and Waiting Time when the process finishes."
+
+======================================================
+SLIDE 9 — KEY METRICS
+Presenter: Student C
+======================================================
+
+"Now let's look at how we measure the scheduler's performance.
+
+We have four key metrics.
+
+TAT — Turnaround Time — is the total time from when a process arrives 
+until it finishes. Formula: Finish Time minus Arrival Time. 
+Our simulation produces an average TAT of about 19 ticks.
+
+WT — Waiting Time — is the time spent NOT running. 
+Formula: TAT minus Burst Time. Our average WT is about 8 ticks.
+
+UTIL — Core Utilization — tells us how busy each core was. 
+Formula: busy ticks divided by total ticks, times 100. 
+Our cores run at 75 to 95% utilization, meaning very little idle time.
+
+TP — Throughput — is how many processes complete per tick. 
+We complete 0.12 processes per tick on average.
+
+The goal of a good scheduler is: lower TAT, lower WT, higher utilization, higher throughput. 
+And because we use all four algorithms working together, our numbers are much better 
+than a simple Round-Robin scheduler would produce."
+
+======================================================
+SLIDE 10 — LIVE DEMO
+Presenter: Student C
+======================================================
+
+"Now let's see it working live.
+
+[Open ui/index.html in browser]
+
+Our web UI has four key features I want to show you.
+
+First — I'll hit Start. You can see the 10 processes being distributed across 4 cores. 
+Watch the core cards — each one shows what's running, how much quantum is left, 
+and the waiting queue below.
+
+[Let it run for 10-15 ticks]
+
+Second — I'll use Step mode. This lets me advance tick by tick, 
+which is great for explaining exactly what's happening at each moment.
+
+Third — I'll toggle Work Stealing OFF. 
+Watch what happens — cores start going idle because they're not stealing anymore.
+[Turn it off, wait a few ticks, show an idle core]
+Now I'll turn it back on. Watch the idle core immediately pull a process from the busiest one.
+
+That's the power of being able to toggle algorithms — 
+you can see exactly what each one contributes.
+
+Fourth — I can inject a process mid-simulation. 
+[Enter name, burst, priority, click Add]
+Watch it appear in the table and immediately get assigned to the lightest core.
+
+The Gantt chart, event log, and stats footer are all updating live as the simulation runs."
+
+======================================================
+SLIDE 11 — TECH STACK
+Presenter: Student C
+======================================================
+
+"Our project is built in two completely separate parts that mirror each other.
+
+On the left — the C backend. This is scheduler.c — 
+a standalone C program you compile with GCC and run in your terminal. 
+It implements all four algorithms from scratch, using only standard C libraries. 
+No frameworks, no dependencies. Just clean C code.
+
+It outputs every scheduling event as it happens — arrivals, dispatches, 
+preemptions, steals, migrations, aging boosts — and prints a full statistics 
+table when all processes are done.
+
+On the right — the JavaScript frontend. This is the web UI in the ui/ folder. 
+It's split into three separate files:
+
+engine.js — contains the identical scheduling algorithms in JavaScript. 
+This is what powers the simulation in the browser.
+
+renderer.js — reads the engine's state and draws everything on screen. 
+It never touches the algorithm logic.
+
+main.js — connects the buttons, sliders, and toggles to the engine and renderer.
+
+This separation of concerns — algorithm, rendering, control — 
+is good software engineering and makes the code easy to explain and maintain."
+
+======================================================
+SLIDE 12 — THANK YOU / Q&A
+Presenter: Student C (or all three together)
+======================================================
+
+"To summarize:
+
+We built a Multi-Core Load Balancing Scheduler with four algorithms:
+Priority Round-Robin as our base policy,
+Work Stealing for idle cores,
+Dynamic Migration for periodic rebalancing,
+and Priority Aging to guarantee no starvation.
+
+We implemented it in C for correctness and performance,
+and in JavaScript with a full web dashboard for visualization and demonstration.
+
+The scheduler runs 10 processes across 4 cores with 75 to 95% core utilization,
+zero starvation, and an average turnaround time of 19 ticks.
+
+Thank you for listening.
+
+We're happy to take any questions."
+
+[All three stand confidently and be ready]
+
+======================================================
+COMMON VIVA QUESTIONS — QUICK ANSWERS
+======================================================
+
+Q: "What does priority 1 vs priority 10 mean?"
+A: "Priority 1 is the most urgent — it runs first. Priority 10 is the least urgent. 
+   Lower number means higher urgency."
+
+Q: "What happens when the quantum expires?"
+A: "The running process is preempted — stopped — and put back in the ready queue. 
+   The next highest-priority process is then dispatched."
+
+Q: "Why 4 ticks for the quantum?"
+A: "It's a balance. Too small and we spend too much time context-switching. 
+   Too large and it degenerates into FCFS. 4 ticks gives fairness without too much overhead."
+
+Q: "Can you show work stealing happening?"
+A: "Yes — in Step mode, I can show you a tick where a core goes idle 
+   and immediately steal a process from the busiest one."
+
+Q: "What is starvation?"
+A: "Starvation is when a low-priority process waits indefinitely because 
+   high-priority processes keep arriving. Our Priority Aging algorithm prevents this 
+   by making every waiting process more urgent over time."
+
+Q: "What is TAT?"
+A: "Turnaround Time equals Finish Time minus Arrival Time. 
+   It's the total time the process spent in the system, including waiting."
+
+Q: "What language is the scheduler written in?"
+A: "The core scheduler is in C — compiled with GCC, no dependencies. 
+   The web visualization reimplements the same algorithms in JavaScript."
+
+Q: "Why use per-core queues instead of one global queue?"
+A: "Per-core queues avoid lock contention — in a real OS, a global queue needs a lock 
+   that all cores must acquire, which creates a bottleneck. 
+   Per-core queues let each core work independently. 
+   We handle the resulting imbalance with Work Stealing and Migration."
+
+======================================================
+END OF SPEAKER NOTES
+======================================================
